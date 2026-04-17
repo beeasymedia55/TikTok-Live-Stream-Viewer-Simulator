@@ -1,0 +1,220 @@
+import requests
+import json
+import time
+import random
+import threading
+from fake_useragent import UserAgent
+from urllib.parse import urlparse, parse_qs
+
+class TikTokViewBot:
+    def __init__(self):
+        self.session = requests.Session()
+        self.user_agent = UserAgent()
+        self.devices = self.load_android_devices()
+        self.session_cookies = {}
+        self.headers = {}
+        
+        # Configure session settings
+        self.session.headers.update({
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Connection': 'keep-alive',
+        })
+    
+    def load_android_devices(self):
+        """Load a list of emulated Android devices"""
+        return [
+            {
+                'device_id': f"70{random.randint(1000000000, 9999999999)}",
+                'device_type': 'Android',
+                'os_version': '10',
+                'model': 'SM-G975F'
+            },
+            {
+                'device_id': f"71{random.randint(1000000000, 9999999999)}",
+                'device_type': 'Android',
+                'os_version': '11',
+                'model': 'Pixel 4'
+            },
+            {
+                'device_id': f"72{random.randint(1000000000, 9999999999)}",
+                'device_type': 'Android',
+                'os_version': '12',
+                'model': 'SM-G998B'
+            }
+        ]
+    
+    def set_session_cookies(self, cookies_dict):
+        """Set session cookies for authentication"""
+        self.session_cookies = cookies_dict
+        self.session.cookies.update(cookies_dict)
+    
+    def generate_device_headers(self):
+        """Generate headers with random Android device information"""
+        device = random.choice(self.devices)
+        
+        headers = {
+            'User-Agent': f'com.ss.android.ugc.trill/... (Linux; U; Android {device["os_version"]}; en_US; {device["model"]}; Build/...)',
+            'X-SS-DP': '1128',
+            'X-Tt-Token': '',
+            'X-Khronos': str(int(time.time())),
+            'X-Gorgon': self.generate_gorgon_token(),
+            'X-Pods': '1',
+            'X-Argus': self.generate_argus_token(),
+            'X-Ladon': self.generate_ladon_token(),
+        }
+        
+        # Add session cookies if available
+        if self.session_cookies:
+            headers['Cookie'] = '; '.join([f'{k}={v}' for k, v in self.session_cookies.items()])
+        
+        return headers
+    
+    def generate_gorgon_token(self):
+        """Generate a basic Gorgon token (simplified version)"""
+        # This is a simplified version - real implementation would require reverse engineering
+        timestamp = str(int(time.time()))
+        return f"{timestamp[:8]}{''.join(random.choices('abcdef0123456789', k=24))}"
+    
+    def generate_argus_token(self):
+        """Generate a basic Argus token"""
+        return ''.join(random.choices('ABCDEF0123456789', k=32)).lower()
+    
+    def generate_ladon_token(self):
+        """Generate a basic Ladon token"""
+        return ''.join(random.choices('abcdef0123456789', k=64))
+    
+    def extract_video_id(self, url):
+        """Extract video ID from TikTok URL"""
+        try:
+            parsed_url = urlparse(url)
+            if 'video' in parsed_url.path:
+                path_parts = parsed_url.path.split('/')
+                video_index = path_parts.index('video')
+                if video_index + 1 < len(path_parts):
+                    return path_parts[video_index + 1]
+            
+            # Try to extract from query parameters
+            query_params = parse_qs(parsed_url.query)
+            if 'video_id' in query_params:
+                return query_params['video_id'][0]
+                
+        except Exception as e:
+            print(f"Error extracting video ID: {e}")
+        
+        return None
+    
+    def send_view_request(self, video_url, is_live=False):
+        """Send view request to TikTok"""
+        try:
+            video_id = self.extract_video_id(video_url)
+            if not video_id:
+                print("Could not extract video ID from URL")
+                return False
+            
+            # Generate new device headers for each request
+            headers = self.generate_device_headers()
+            self.session.headers.update(headers)
+            
+            if is_live:
+                # Live stream view endpoint
+                endpoint = f"https://webcast.tiktok.com/webcast/room/enter/"
+                params = {
+                    'aid': 1988,
+                    'room_id': video_id,
+                    'app_name': 'tiktok_web',
+                    'device_platform': 'web',
+                    'version_code': 180800,
+                    'webcast_sdk_version': '1.3.0',
+                }
+            else:
+                # Regular video view endpoint
+                endpoint = "https://api.tiktok.com/aweme/v1/aweme/stats/"
+                params = {
+                    'aid': 1988,
+                    'item_id': video_id,
+                    'type': 1,  # 1 for view
+                    'app_name': 'tiktok_web',
+                    'device_platform': 'web',
+                    'version_code': 180800,
+                }
+            
+            response = self.session.post(endpoint, params=params, timeout=30)
+            
+            if response.status_code == 200:
+                try:
+                    data = response.json()
+                    if data.get('status_code') == 0:
+                        print(f"âœ… View sent successfully to {'live' if is_live else 'video'} {video_id}")
+                        return True
+                    else:
+                        print(f"âŒ API error: {data.get('status_msg', 'Unknown error')}")
+                except json.JSONDecodeError:
+                    print("âŒ Invalid JSON response")
+            else:
+                print(f"âŒ HTTP error: {response.status_code}")
+                
+        except requests.RequestException as e:
+            print(f"âŒ Request failed: {e}")
+        except Exception as e:
+            print(f"âŒ Unexpected error: {e}")
+        
+        return False
+    
+    def start_view_bot(self, video_url, views_count=100, delay_range=(2, 5), is_live=False):
+        """Start sending views to a video or live stream"""
+        print(f"ðŸš€ Starting view bot for {'live stream' if is_live else 'video'}")
+        print(f"ðŸ“Š Target views: {views_count}")
+        print(f"â±ï¸  Delay range: {delay_range[0]}-{delay_range[1]} seconds")
+        
+        successful_views = 0
+        
+        for i in range(views_count):
+            try:
+                if self.send_view_request(video_url, is_live):
+                    successful_views += 1
+                
+                # Random delay between requests
+                delay = random.uniform(delay_range[0], delay_range[1])
+                time.sleep(delay)
+                
+                # Print progress
+                if (i + 1) % 10 == 0:
+                    print(f"ðŸ“ˆ Progress: {i + 1}/{views_count} | Successful: {successful_views}")
+                    
+            except KeyboardInterrupt:
+                print("\nâ¹ï¸  Bot stopped by user")
+                break
+        
+        print(f"ðŸŽ‰ Finished! Total successful views: {successful_views}/{views_count}")
+        return successful_views
+
+# Example usage and utility functions
+def main():
+    # Initialize the bot
+    bot = TikTokViewBot()
+    
+    # Example TikTok video URL (replace with actual URL)
+    video_url = "https://www.tiktok.com/@username/video/1234567890123456789"
+    
+    # Example live stream URL
+    live_url = "https://www.tiktok.com/@username/live"
+    
+    # Optional: Set session cookies if you have them
+    # cookies = {
+    #     'sessionid': 'your_session_id',
+    #     'tt_webid': 'your_web_id',
+    # }
+    # bot.set_session_cookies(cookies)
+    
+    # Start sending views (uncomment one of these)
+    
+    # For regular video:
+    # bot.start_view_bot(video_url, views_count=50, delay_range=(3, 7), is_live=False)
+    
+    # For live stream:
+    # bot.start_view_bot(live_url, views_count=100, delay_range=(1, 3), is_live=True)
+
+if __name__ == "__main__":
+    main()
